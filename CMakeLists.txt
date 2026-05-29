@@ -28,8 +28,12 @@ target_include_directories(plugin_sa PUBLIC
     "${PLUGIN_SDK}/plugin_sa"
     "${PLUGIN_SDK}/plugin_sa/game_sa"
     "${PLUGIN_SDK}/plugin_sa/game_sa/rw"
+    "${PLUGIN_SDK}/plugin_sa/game_sa/enums"
+    "${PLUGIN_SDK}/plugin_sa/game_sa/meta"
     "${PLUGIN_SDK}/shared"
     "${PLUGIN_SDK}/shared/game"
+    "${PLUGIN_SDK}/shared/extensions"
+    "${PLUGIN_SDK}/shared/extender"
     "${PLUGIN_SDK}/injector"
     "${PLUGIN_SDK}/safetyhook"
 )
