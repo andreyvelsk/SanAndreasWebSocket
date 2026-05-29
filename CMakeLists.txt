@@ -43,9 +43,11 @@ target_compile_definitions(plugin_sa PUBLIC
     RW
     _CRT_SECURE_NO_WARNINGS
     _CRT_NON_CONFORMING_SWPRINTFS
-    WIN32_LEAN_AND_MEAN
     NOMINMAX
 )
+
+# plugin-sdk требует windows.h (byte, WINAPI и др.) — принудительно включаем первым
+target_compile_options(plugin_sa PUBLIC /FI "windows.h")
 
 # plugin-sdk использует старые касты указателей — отключаем соответствующие предупреждения
 target_compile_options(plugin_sa PRIVATE
