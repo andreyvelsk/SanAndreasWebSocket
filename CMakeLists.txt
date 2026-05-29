@@ -6,9 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ---------------------------------------------------------------------------- #
 #  Зависимости через vcpkg                                                      #
-#  nlohmann-json уже сейчас; boost-beast/boost-asio добавим в шаге WebSocket   #
 # ---------------------------------------------------------------------------- #
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system)
 
 # ---------------------------------------------------------------------------- #
 #  plugin-sdk — статическая библиотека из git submodule                        #
@@ -41,13 +41,18 @@ target_include_directories(plugin_sa PUBLIC
 target_compile_definitions(plugin_sa PUBLIC
     GTASA
     RW
+    _WIN32_WINNT=0x0601
     _CRT_SECURE_NO_WARNINGS
     _CRT_NON_CONFORMING_SWPRINTFS
     NOMINMAX
 )
 
-# plugin-sdk требует windows.h (byte, WINAPI и др.) — принудительно включаем первым
-target_compile_options(plugin_sa PUBLIC /FI "windows.h")
+# winsock2.h ДОЛЖЕН идти раньше windows.h (иначе конфликт winsock1/winsock2 с boost::asio)
+# windows.h без WIN32_LEAN_AND_MEAN даёт byte через rpcndr.h (нужен game_sa)
+target_compile_options(plugin_sa PUBLIC
+    /FI "winsock2.h"
+    /FI "windows.h"
+)
 
 # plugin-sdk использует старые касты указателей — отключаем соответствующие предупреждения
 target_compile_options(plugin_sa PRIVATE
@@ -62,6 +67,8 @@ target_compile_options(plugin_sa PRIVATE
 # ---------------------------------------------------------------------------- #
 add_library(${PROJECT_NAME} SHARED
     src/Main.cpp
+    src/server/WsServer.cpp
+    src/server/WsSession.cpp
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -69,16 +76,19 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     PREFIX ""
 )
 
+target_include_directories(${PROJECT_NAME} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
 target_link_libraries(${PROJECT_NAME} PRIVATE
     plugin_sa
     nlohmann_json::nlohmann_json
+    Boost::system
     ws2_32
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     GTASA
-    _WIN32_WINNT=0x0601
-    WIN32_LEAN_AND_MEAN
     NOMINMAX
     _CRT_SECURE_NO_WARNINGS
 )
