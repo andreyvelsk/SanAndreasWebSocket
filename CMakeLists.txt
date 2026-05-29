@@ -5,10 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ---------------------------------------------------------------------------- #
-#  Зависимости через vcpkg (websocketpp/asio/json — понадобятся в шагах 7-8)   #
+#  Зависимости через vcpkg                                                      #
+#  nlohmann-json уже сейчас; boost-beast/boost-asio добавим в шаге WebSocket   #
 # ---------------------------------------------------------------------------- #
-find_package(websocketpp CONFIG REQUIRED)
-find_package(asio        CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 # ---------------------------------------------------------------------------- #
@@ -61,16 +60,12 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     plugin_sa
-    websocketpp::websocketpp
-    asio::asio
     nlohmann_json::nlohmann_json
     ws2_32
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     GTASA
-    ASIO_STANDALONE
-    _WEBSOCKETPP_CPP11_THREAD_
     _WIN32_WINNT=0x0601
     WIN32_LEAN_AND_MEAN
     NOMINMAX
