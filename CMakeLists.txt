@@ -49,9 +49,10 @@ target_compile_definitions(plugin_sa PUBLIC
 
 # winsock2.h ДОЛЖЕН идти раньше windows.h (иначе конфликт winsock1/winsock2 с boost::asio)
 # windows.h без WIN32_LEAN_AND_MEAN даёт byte через rpcndr.h (нужен game_sa)
+# Используем /FI<file> без пробела — CMake иначе дедуплицирует два одинаковых /FI
 target_compile_options(plugin_sa PUBLIC
-    /FI "winsock2.h"
-    /FI "windows.h"
+    "/FIwinsock2.h"
+    "/FIwindows.h"
 )
 
 # plugin-sdk использует старые касты указателей — отключаем соответствующие предупреждения
