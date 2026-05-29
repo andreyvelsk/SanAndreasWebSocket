@@ -27,6 +27,7 @@ add_library(plugin_sa STATIC ${PLUGIN_SA_SOURCES})
 target_include_directories(plugin_sa PUBLIC
     "${PLUGIN_SDK}/plugin_sa"
     "${PLUGIN_SDK}/plugin_sa/game_sa"
+    "${PLUGIN_SDK}/plugin_sa/game_sa/rw"
     "${PLUGIN_SDK}/shared"
     "${PLUGIN_SDK}/shared/game"
     "${PLUGIN_SDK}/injector"
@@ -35,6 +36,7 @@ target_include_directories(plugin_sa PUBLIC
 
 target_compile_definitions(plugin_sa PUBLIC
     GTASA
+    RW
     _CRT_SECURE_NO_WARNINGS
     _CRT_NON_CONFORMING_SWPRINTFS
     WIN32_LEAN_AND_MEAN
