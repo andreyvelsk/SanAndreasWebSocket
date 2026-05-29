@@ -2,8 +2,6 @@
   "name": "san-andreas-web-socket",
   "version": "0.1.0",
   "dependencies": [
-    "websocketpp",
-    "asio",
     "nlohmann-json"
   ]
 }
