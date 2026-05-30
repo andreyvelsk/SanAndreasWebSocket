@@ -1,4 +1,5 @@
 #include "GameThread.h"
+#include "Logger.h"
 
 #include "plugin.h"
 
@@ -16,18 +17,23 @@ namespace GameThread {
     {
         plugin::Events::gameProcessEvent += []() {
             std::unique_lock lk(g_mutex);
+            if (g_queue.empty()) return;
+            int count = 0;
             while (!g_queue.empty()) {
                 auto fn = std::move(g_queue.front());
                 g_queue.pop();
-                lk.unlock();        // release lock while executing
+                ++count;
+                lk.unlock();
                 fn();
                 lk.lock();
             }
+            Logger::trace("GameThread: drained %d task(s)", count);
         };
     }
 
     void post(std::function<void()> fn)
     {
+        Logger::trace("GameThread: post() called");
         std::lock_guard lk(g_mutex);
         g_queue.push(std::move(fn));
     }

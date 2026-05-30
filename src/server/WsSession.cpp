@@ -1,6 +1,7 @@
 #include "WsSession.h"
 
 #include "../GameThread.h"
+#include "../Logger.h"
 #include "../protocol/FieldRegistry.h"
 
 #include <nlohmann/json.hpp>
@@ -25,8 +26,12 @@ void WsSession::run()
         beast::role_type::server));
 
     ws_.async_accept([self = shared_from_this()](beast::error_code ec) {
-        if (ec) return;
+        if (ec) {
+            Logger::trace("WsSession: accept error: %s", ec.message().c_str());
+            return;
+        }
         ++self->clientCount_;
+        Logger::trace("WsSession: client connected (total=%d)", (int)self->clientCount_);
         self->ws_.text(true);
         self->doRead();
     });
@@ -34,6 +39,7 @@ void WsSession::run()
 
 void WsSession::send(std::string msg)
 {
+    Logger::trace("WsSession: send: %s", msg.c_str());
     writeQueue_.push_back(std::move(msg));
     if (!writing_)
         doWrite();
@@ -65,12 +71,14 @@ void WsSession::doRead()
 {
     ws_.async_read(buf_, [self = shared_from_this()](beast::error_code ec, std::size_t) {
         if (ec) {
+            Logger::trace("WsSession: read closed/error: %s", ec.message().c_str());
             self->cancelSubscribeTimer();
             --self->clientCount_;
             return;
         }
         std::string msg = beast::buffers_to_string(self->buf_.data());
         self->buf_.consume(self->buf_.size());
+        Logger::trace("WsSession: recv: %s", msg.c_str());
         self->handleMessage(msg);
         self->doRead();
     });
@@ -109,6 +117,8 @@ void WsSession::startSubscribeTimer()
 
         GameThread::post([self, fields = std::move(fields)]() {
             // ── game-thread: read fields ──────────────────────────────────
+            Logger::trace("WsSession: subscribe timer — reading %d field(s) in game-thread",
+                          (int)fields.size());
             nlohmann::json current = nlohmann::json::object();
             for (const auto& f : fields)
                 current[f] = FieldRegistry::get(f);
@@ -204,6 +214,8 @@ void WsSession::handleMessage(const std::string& msg)
 
         auto self = shared_from_this();
         GameThread::post([self, id, fields]() {
+            Logger::trace("WsSession: query — reading %d field(s) in game-thread",
+                          (int)fields.size());
             nlohmann::json fieldResult = nlohmann::json::object();
             for (const auto& f : fields)
                 fieldResult[f] = FieldRegistry::get(f);

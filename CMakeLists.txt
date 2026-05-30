@@ -68,6 +68,7 @@ target_compile_options(plugin_sa PRIVATE
 # ---------------------------------------------------------------------------- #
 add_library(${PROJECT_NAME} SHARED
     src/Main.cpp
+    src/Logger.cpp
     src/GameThread.cpp
     src/server/WsServer.cpp
     src/server/WsSession.cpp

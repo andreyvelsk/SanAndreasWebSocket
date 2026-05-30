@@ -1,5 +1,6 @@
 #include "server/WsServer.h"
 #include "GameThread.h"
+#include "Logger.h"
 #include "protocol/FieldRegistry.h"
 
 #include "plugin.h"
@@ -20,6 +21,16 @@ static std::string getIniPath() {
     if (slash) strcpy_s(slash + 1, MAX_PATH - (DWORD)(slash + 1 - buf),
                         "SanAndreasWebSocket.ini");
     else       strcpy_s(buf, sizeof(buf), "SanAndreasWebSocket.ini");
+    return buf;
+}
+
+static std::string getLogPath() {
+    char buf[MAX_PATH];
+    GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    char* slash = strrchr(buf, '\\');
+    if (slash) strcpy_s(slash + 1, MAX_PATH - (DWORD)(slash + 1 - buf),
+                        "SanAndreasWebSocket.log");
+    else       strcpy_s(buf, sizeof(buf), "SanAndreasWebSocket.log");
     return buf;
 }
 // ----------------------------------------------------------------------------
@@ -51,6 +62,11 @@ static struct SanAndreasWebSocket {
                                               ini.c_str());
             snprintf(g_bindStr, sizeof(g_bindStr), "%s:%d", host, (int)port);
 
+            // --- инициализируем логгер ---
+            int traceFlag = GetPrivateProfileIntA("Debug", "log_trace", 0, ini.c_str());
+            Logger::init(traceFlag != 0, getLogPath());
+            Logger::trace("Plugin init: host=%s port=%d", host, port);
+
             // --- создаём сервер ---
             asio::ip::address addr;
             try { addr = asio::ip::make_address(host); }
@@ -62,6 +78,7 @@ static struct SanAndreasWebSocket {
                 asio::io_context::executor_type>>(g_ioc.get_executor());
             g_ioThread  = std::thread([] { g_ioc.run(); });
             g_ioThread.detach();
+            Logger::trace("WsServer started, ok=%d", g_server->ok() ? 1 : 0);
         };
 
         Events::drawingEvent += [] {
