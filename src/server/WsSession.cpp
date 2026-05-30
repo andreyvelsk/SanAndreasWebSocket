@@ -100,6 +100,38 @@ nlohmann::json WsSession::makeError(const nlohmann::json& id, int code, std::str
 
 // ── subscribe timer ──────────────────────────────────────────────────────────
 
+// ── sendSnapshot: читает поля прямо сейчас и отправляет все (без diff) ─────────
+
+void WsSession::sendSnapshot(std::set<std::string> fields)
+{
+    if (fields.empty()) return;
+    auto self = shared_from_this();
+    GameThread::post([self, fields = std::move(fields)]() {
+        Logger::trace("WsSession: sendSnapshot — reading %d field(s) in game-thread",
+                      (int)fields.size());
+        nlohmann::json current = nlohmann::json::object();
+        for (const auto& f : fields)
+            current[f] = FieldRegistry::get(f);
+
+        asio::post(self->executor(),
+            [self, current = std::move(current)]() mutable {
+                // Update previousValues_ so the timer won't re-send the same data
+                for (auto& [k, v] : current.items())
+                    self->previousValues_[k] = v;
+
+                nlohmann::json notif = {
+                    {"jsonrpc", "2.0"},
+                    {"method",  "data"},
+                    {"params",  {
+                        {"ts",     static_cast<uint64_t>(GetTickCount())},
+                        {"fields", std::move(current)}
+                    }}
+                };
+                self->send(notif.dump());
+            });
+    });
+}
+
 void WsSession::startSubscribeTimer()
 {
     if (subscribedFields_.empty()) {
@@ -249,9 +281,9 @@ void WsSession::handleMessage(const std::string& msg)
             }
         }
 
-        // Optional interval_ms (default 500, min 50)
-        if (params.contains("interval_ms") && params["interval_ms"].is_number_integer()) {
-            int ms = params["interval_ms"].get<int>();
+        // Optional interval (default 500, min 50 ms)
+        if (params.contains("interval") && params["interval"].is_number_integer()) {
+            int ms = params["interval"].get<int>();
             if (ms < 50) ms = 50;
             subscribeInterval_ = std::chrono::milliseconds(ms);
         }
@@ -259,16 +291,20 @@ void WsSession::handleMessage(const std::string& msg)
         for (const auto& f : fields)
             subscribedFields_.insert(f);
 
-        // Start timer if not already running
-        if (!timerRunning_)
-            startSubscribeTimer();
-
+        // Send confirmation before async snapshot
         if (!isNotification) {
             nlohmann::json subList = nlohmann::json::array();
             for (const auto& f : subscribedFields_) subList.push_back(f);
             send(makeResult(id, {{"subscribed", std::move(subList)},
-                                  {"interval_ms", subscribeInterval_.count()}}).dump());
+                                  {"interval", subscribeInterval_.count()}}).dump());
         }
+
+        // Immediate snapshot of all subscribed fields
+        sendSnapshot(subscribedFields_);
+
+        // Start interval timer if not already running
+        if (!timerRunning_)
+            startSubscribeTimer();
         return;
     }
 

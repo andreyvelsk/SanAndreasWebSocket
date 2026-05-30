@@ -6,7 +6,7 @@ All values are read on the **game thread** — if the player entity is unavailab
 
 ---
 
-## Position
+## Position & Orientation
 
 | Field | JSON type | Description |
 |-------|-----------|-------------|
@@ -14,9 +14,14 @@ All values are read on the **game thread** — if the player entity is unavailab
 | `position_x` | `float` | X coordinate |
 | `position_y` | `float` | Y coordinate |
 | `position_z` | `float` | Z coordinate |
+| `angle` | `float` | Heading in degrees, `0`–`360` (clockwise from north). Derived from `m_fHeadingCurrent` in radians. |
 
 > `position` is the recommended field for tracking player movement — it returns
 > all three axes in one value and is compared as a unit for change detection.
+
+> In interiors `position` returns **world-space coordinates** (interior cells are placed
+> at fixed locations outside the main map area). Use `area_code` to determine whether
+> the player is in the open world (`0`) or in an interior.
 
 ---
 

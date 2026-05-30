@@ -44,6 +44,7 @@ private:
     static nlohmann::json makeError(const nlohmann::json& id, int code, std::string message);
 
     // Subscribe push loop
+    void sendSnapshot(std::set<std::string> fields);
     void startSubscribeTimer();
     void cancelSubscribeTimer();
 };
