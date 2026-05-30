@@ -284,7 +284,7 @@ void WsSession::handleMessage(const std::string& msg)
         // Optional interval (default 500, min 50 ms)
         if (params.contains("interval") && params["interval"].is_number_integer()) {
             int ms = params["interval"].get<int>();
-            if (ms < 50) ms = 50;
+            if (ms < 10) ms = 10;
             subscribeInterval_ = std::chrono::milliseconds(ms);
         }
 
