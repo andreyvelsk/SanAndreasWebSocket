@@ -141,7 +141,7 @@ The server reads the values on the **game thread** and replies asynchronously.
 
 Subscribe to push updates for one or more fields.  
 The server will send a `data` notification whenever a subscribed field changes,
-checked at the configured `interval_ms` interval.
+checked at the configured `interval` interval.
 
 Calling `subscribe` again with new fields **adds** them to the existing subscription
 and optionally updates the interval.
@@ -153,7 +153,7 @@ and optionally updates the interval.
   "method":  "subscribe",
   "params":  {
     "fields":      ["position", "health"],
-    "interval_ms": 200
+    "interval": 200
   },
   "id": "s1"
 }
@@ -162,7 +162,7 @@ and optionally updates the interval.
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `fields`      | `string[]` | yes | — | Fields to subscribe to |
-| `interval_ms` | `integer`  | no  | `500` | Check interval in milliseconds. Minimum: `50` |
+| `interval` | `integer`  | no  | `500` | Check interval in milliseconds. Minimum: `50` |
 
 **Response**
 ```json
@@ -170,7 +170,7 @@ and optionally updates the interval.
   "jsonrpc": "2.0",
   "result": {
     "subscribed":  ["position", "health"],
-    "interval_ms": 200
+    "interval": 200
   },
   "id": "s1"
 }
@@ -291,8 +291,8 @@ Only changed fields are included.
 ### Subscribe to position updates every 100 ms
 
 ```json
-→ {"jsonrpc":"2.0","method":"subscribe","params":{"fields":["position"],"interval_ms":100},"id":"2"}
-← {"jsonrpc":"2.0","result":{"subscribed":["position"],"interval_ms":100},"id":"2"}
+→ {"jsonrpc":"2.0","method":"subscribe","params":{"fields":["position"],"interval":100},"id":"2"}
+← {"jsonrpc":"2.0","result":{"subscribed":["position"],"interval":100},"id":"2"}
 
 // whenever position changes:
 ← {"jsonrpc":"2.0","method":"data","params":{"ts":3600100,"fields":{"position":{"x":2498.3,"y":-1669.1,"z":13.4}}}}
@@ -302,8 +302,8 @@ Only changed fields are included.
 ### Subscribe to health + position, then stop position updates
 
 ```json
-→ {"jsonrpc":"2.0","method":"subscribe","params":{"fields":["health","position"],"interval_ms":500},"id":"3"}
-← {"jsonrpc":"2.0","result":{"subscribed":["health","position"],"interval_ms":500},"id":"3"}
+→ {"jsonrpc":"2.0","method":"subscribe","params":{"fields":["health","position"],"interval":500},"id":"3"}
+← {"jsonrpc":"2.0","result":{"subscribed":["health","position"],"interval":500},"id":"3"}
 
 → {"jsonrpc":"2.0","method":"unsubscribe","params":{"fields":["position"]},"id":"4"}
 ← {"jsonrpc":"2.0","result":null,"id":"4"}
