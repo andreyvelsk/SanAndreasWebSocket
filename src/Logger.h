@@ -1,10 +1,12 @@
 #pragma once
-#include <string>
 
 namespace Logger {
-    // Call once at startup. If enabled=false, all trace() calls are no-ops.
-    void init(bool enabled, const std::string& logFilePath);
+    // Call once, as early as possible (DLL constructor is fine).
+    // Uses only POD internals — no static init order issues.
+    // If enabled=false all trace() calls are no-ops (no file created).
+    void init(bool enabled, const char* logFilePath);
 
-    // Thread-safe. Writes timestamped line to log file if tracing is enabled.
+    // Thread-safe (CRITICAL_SECTION). Writes timestamped line to log.
+    // Safe to call before init() — will be a no-op.
     void trace(const char* fmt, ...);
 }
