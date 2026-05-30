@@ -1,17 +1,26 @@
 #include "WsSession.h"
 
+#include "../GameThread.h"
+#include "../protocol/FieldRegistry.h"
+
 #include <nlohmann/json.hpp>
+#include <windows.h>   // GetTickCount
 
 namespace asio  = boost::asio;
 namespace beast = boost::beast;
 
+// ── ctor ─────────────────────────────────────────────────────────────────────
+
 WsSession::WsSession(asio::ip::tcp::socket socket, std::atomic<int>& clientCount)
-    : ws_(std::move(socket)), clientCount_(clientCount)
+    : ws_(std::move(socket))
+    , clientCount_(clientCount)
+    , subscribeTimer_(ws_.get_executor())
 {}
+
+// ── public ───────────────────────────────────────────────────────────────────
 
 void WsSession::run()
 {
-    // Recommended timeouts for server role
     ws_.set_option(beast::websocket::stream_base::timeout::suggested(
         beast::role_type::server));
 
@@ -29,6 +38,8 @@ void WsSession::send(std::string msg)
     if (!writing_)
         doWrite();
 }
+
+// ── private: io ──────────────────────────────────────────────────────────────
 
 void WsSession::doWrite()
 {
@@ -54,6 +65,7 @@ void WsSession::doRead()
 {
     ws_.async_read(buf_, [self = shared_from_this()](beast::error_code ec, std::size_t) {
         if (ec) {
+            self->cancelSubscribeTimer();
             --self->clientCount_;
             return;
         }
@@ -64,14 +76,216 @@ void WsSession::doRead()
     });
 }
 
+// ── JSON-RPC 2.0 helpers ─────────────────────────────────────────────────────
+
+nlohmann::json WsSession::makeResult(const nlohmann::json& id, nlohmann::json result)
+{
+    return {{"jsonrpc", "2.0"}, {"result", std::move(result)}, {"id", id}};
+}
+
+nlohmann::json WsSession::makeError(const nlohmann::json& id, int code, std::string message)
+{
+    return {{"jsonrpc", "2.0"},
+            {"error",   {{"code", code}, {"message", std::move(message)}}},
+            {"id",      id}};
+}
+
+// ── subscribe timer ──────────────────────────────────────────────────────────
+
+void WsSession::startSubscribeTimer()
+{
+    if (subscribedFields_.empty()) {
+        timerRunning_ = false;
+        return;
+    }
+    timerRunning_ = true;
+    subscribeTimer_.expires_after(subscribeInterval_);
+    subscribeTimer_.async_wait([self = shared_from_this()](boost::system::error_code ec) {
+        if (ec) { self->timerRunning_ = false; return; }
+
+        // Capture current subscribed fields (copy, safe on io-thread)
+        auto fields = self->subscribedFields_;
+        if (fields.empty()) { self->timerRunning_ = false; return; }
+
+        GameThread::post([self, fields = std::move(fields)]() {
+            // ── game-thread: read fields ──────────────────────────────────
+            nlohmann::json current = nlohmann::json::object();
+            for (const auto& f : fields)
+                current[f] = FieldRegistry::get(f);
+
+            // Post result back to io-thread
+            asio::post(self->executor(),
+                [self, current = std::move(current)]() mutable {
+                    // ── io-thread: diff & send ────────────────────────────
+                    nlohmann::json diff = nlohmann::json::object();
+                    for (auto& [k, v] : current.items()) {
+                        auto it = self->previousValues_.find(k);
+                        if (it == self->previousValues_.end() || it->second != v) {
+                            diff[k]                  = v;
+                            self->previousValues_[k] = v;
+                        }
+                    }
+                    if (!diff.empty()) {
+                        nlohmann::json notif = {
+                            {"jsonrpc", "2.0"},
+                            {"method",  "data"},
+                            {"params",  {
+                                {"ts",     static_cast<uint64_t>(GetTickCount())},
+                                {"fields", std::move(diff)}
+                            }}
+                        };
+                        self->send(notif.dump());
+                    }
+                    // Restart timer if still subscribed
+                    if (!self->subscribedFields_.empty())
+                        self->startSubscribeTimer();
+                    else
+                        self->timerRunning_ = false;
+                });
+        });
+    });
+}
+
+void WsSession::cancelSubscribeTimer()
+{
+    subscribeTimer_.cancel();
+    timerRunning_     = false;
+    subscribedFields_.clear();
+}
+
+// ── message handler ──────────────────────────────────────────────────────────
+
 void WsSession::handleMessage(const std::string& msg)
 {
-    try {
-        auto j = nlohmann::json::parse(msg);
-        if (j.value("type", "") == "ping") {
-            send(nlohmann::json{{"type", "pong"}}.dump());
-        }
-    } catch (...) {
-        // ignore malformed JSON
+    // ── parse ─────────────────────────────────────────────────────────────────
+    nlohmann::json j;
+    try { j = nlohmann::json::parse(msg); }
+    catch (...) {
+        send(makeError(nullptr, -32700, "Parse error").dump());
+        return;
     }
+
+    // ── validate JSON-RPC 2.0 ────────────────────────────────────────────────
+    if (!j.is_object()
+        || !j.contains("method") || !j["method"].is_string()
+        || j.value("jsonrpc", "") != "2.0")
+    {
+        nlohmann::json id = j.contains("id") ? j["id"] : nlohmann::json(nullptr);
+        send(makeError(id, -32600, "Invalid Request").dump());
+        return;
+    }
+
+    const bool     isNotification = !j.contains("id");
+    nlohmann::json id    = isNotification ? nlohmann::json(nullptr) : j["id"];
+    const auto     method = j["method"].get<std::string>();
+    const auto     params = j.value("params", nlohmann::json::object());
+
+    // ── ping ─────────────────────────────────────────────────────────────────
+    if (method == "ping") {
+        if (!isNotification) send(makeResult(id, nullptr).dump());
+        return;
+    }
+
+    // ── query ─────────────────────────────────────────────────────────────────
+    if (method == "query") {
+        if (!params.contains("fields") || !params["fields"].is_array()) {
+            send(makeError(id, -32602, "Invalid params: 'fields' array required").dump());
+            return;
+        }
+        auto fields = params["fields"].get<std::vector<std::string>>();
+
+        // Validate field names immediately (io-thread)
+        for (const auto& f : fields) {
+            if (!FieldRegistry::has(f)) {
+                send(makeError(id, -32002, "Unknown field: " + f).dump());
+                return;
+            }
+        }
+
+        auto self = shared_from_this();
+        GameThread::post([self, id, fields]() {
+            nlohmann::json fieldResult = nlohmann::json::object();
+            for (const auto& f : fields)
+                fieldResult[f] = FieldRegistry::get(f);
+
+            auto resp = makeResult(id, {
+                {"ts",     static_cast<uint64_t>(GetTickCount())},
+                {"fields", std::move(fieldResult)}
+            });
+            asio::post(self->executor(), [self, s = resp.dump()]() {
+                self->send(s);
+            });
+        });
+        return;
+    }
+
+    // ── subscribe ─────────────────────────────────────────────────────────────
+    if (method == "subscribe") {
+        if (!params.contains("fields") || !params["fields"].is_array()) {
+            if (!isNotification)
+                send(makeError(id, -32602, "Invalid params: 'fields' array required").dump());
+            return;
+        }
+        auto fields = params["fields"].get<std::vector<std::string>>();
+
+        // Validate field names
+        for (const auto& f : fields) {
+            if (!FieldRegistry::has(f)) {
+                if (!isNotification)
+                    send(makeError(id, -32002, "Unknown field: " + f).dump());
+                return;
+            }
+        }
+
+        // Optional interval_ms (default 500, min 50)
+        if (params.contains("interval_ms") && params["interval_ms"].is_number_integer()) {
+            int ms = params["interval_ms"].get<int>();
+            if (ms < 50) ms = 50;
+            subscribeInterval_ = std::chrono::milliseconds(ms);
+        }
+
+        for (const auto& f : fields)
+            subscribedFields_.insert(f);
+
+        // Start timer if not already running
+        if (!timerRunning_)
+            startSubscribeTimer();
+
+        if (!isNotification) {
+            nlohmann::json subList = nlohmann::json::array();
+            for (const auto& f : subscribedFields_) subList.push_back(f);
+            send(makeResult(id, {{"subscribed", std::move(subList)},
+                                  {"interval_ms", subscribeInterval_.count()}}).dump());
+        }
+        return;
+    }
+
+    // ── unsubscribe ───────────────────────────────────────────────────────────
+    if (method == "unsubscribe") {
+        if (!params.contains("fields") || !params["fields"].is_array()) {
+            if (!isNotification)
+                send(makeError(id, -32602, "Invalid params: 'fields' array required").dump());
+            return;
+        }
+        auto fields = params["fields"].get<std::vector<std::string>>();
+        for (const auto& f : fields) {
+            subscribedFields_.erase(f);
+            previousValues_.erase(f);
+        }
+        if (!isNotification) send(makeResult(id, nullptr).dump());
+        return;
+    }
+
+    // ── unsubscribe_all ───────────────────────────────────────────────────────
+    if (method == "unsubscribe_all") {
+        cancelSubscribeTimer();
+        previousValues_.clear();
+        if (!isNotification) send(makeResult(id, nullptr).dump());
+        return;
+    }
+
+    // ── unknown method ────────────────────────────────────────────────────────
+    if (!isNotification)
+        send(makeError(id, -32601, "Method not found: " + method).dump());
 }
+

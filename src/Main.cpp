@@ -1,4 +1,6 @@
 #include "server/WsServer.h"
+#include "GameThread.h"
+#include "protocol/FieldRegistry.h"
 
 #include "plugin.h"
 #include "extensions/FontPrint.h"
@@ -34,6 +36,11 @@ using namespace plugin;
 
 static struct SanAndreasWebSocket {
     SanAndreasWebSocket() {
+        // Initialise game-thread queue and field registry immediately
+        // (safe to call before the game loop starts)
+        GameThread::init();
+        FieldRegistry::init();
+
         Events::initGameEvent += [] {
             // --- читаем конфиг ---
             std::string ini = getIniPath();
