@@ -8,6 +8,7 @@
 #include "CWorld.h"
 #include "CPlayerInfo.h"
 #include "CClock.h"
+#include "CRadar.h"
 
 #include <functional>
 #include <unordered_map>
@@ -113,6 +114,35 @@ static nlohmann::json readGameTime()
 static nlohmann::json readGameHour()   { return (int)CClock::ms_nGameClockHours;   }
 static nlohmann::json readGameMinute() { return (int)CClock::ms_nGameClockMinutes; }
 
+// ── map blips ─────────────────────────────────────────────────────────────────
+
+static nlohmann::json readBlips()
+{
+    nlohmann::json arr = nlohmann::json::array();
+    if (!CRadar::ms_RadarTrace) return arr;
+
+    const unsigned int count = MAX_RADAR_TRACES; // 175
+    for (unsigned int i = 0; i < count; ++i) {
+        const tRadarTrace& t = CRadar::ms_RadarTrace[i];
+        if (!t.m_bInUse || t.m_nBlipType == BLIP_NONE) continue;
+
+        arr.push_back({
+            {"idx",         (int)i},
+            {"type",        (int)t.m_nBlipType},
+            {"sprite",      (int)t.m_nRadarSprite},
+            {"display",     (int)t.m_nBlipDisplay},
+            {"color",       (int)t.m_nColour},
+            {"x",           t.m_vecPos.x},
+            {"y",           t.m_vecPos.y},
+            {"z",           t.m_vecPos.z},
+            {"size",        (int)t.m_nBlipSize},
+            {"short_range", (bool)t.m_bShortRange},
+            {"friendly",    (bool)t.m_bFriendly}
+        });
+    }
+    return arr;
+}
+
 } // anonymous namespace
 
 namespace FieldRegistry {
@@ -153,6 +183,9 @@ namespace FieldRegistry {
         g_fields["game_time"]   = readGameTime;
         g_fields["game_hour"]   = readGameHour;
         g_fields["game_minute"] = readGameMinute;
+
+        // map blips
+        g_fields["blips"] = readBlips;
     }
 
     bool has(const std::string& name)

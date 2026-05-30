@@ -21,6 +21,9 @@
 5. [Error Codes](#5-error-codes)
 6. [Quick Examples](#6-quick-examples)
 
+> **Field reference:** [fields.md](fields.md) — all available fields including `blips`.  
+> **Blip system:** [blips.md](blips.md) — full reference for map markers, icons and enums.
+
 ---
 
 ## 1. Connection
@@ -338,3 +341,25 @@ Only changed fields are included.
 → {"jsonrpc":"2.0","method":"query","params":{"fields":["nonexistent"]},"id":"err1"}
 ← {"jsonrpc":"2.0","error":{"code":-32002,"message":"Unknown field: nonexistent"},"id":"err1"}
 ```
+
+### Get all active map blips
+
+```json
+→ {"jsonrpc":"2.0","method":"query","params":{"fields":["blips"]},"id":"map1"}
+← {
+    "jsonrpc":"2.0",
+    "result":{
+      "ts":3600000,
+      "fields":{
+        "blips":[
+          {"idx":0,"type":4,"sprite":38,"display":3,"color":8,"x":2496.0,"y":-1667.6,"z":13.4,"size":2,"short_range":false,"friendly":false},
+          {"idx":1,"type":4,"sprite":6, "display":3,"color":8,"x":255.0, "y":-180.0, "z":1.5, "size":2,"short_range":false,"friendly":false},
+          {"idx":2,"type":2,"sprite":0, "display":2,"color":0,"x":1234.5,"y":-900.0, "z":15.0,"size":1,"short_range":true, "friendly":false}
+        ]
+      }
+    },
+    "id":"map1"
+  }
+```
+
+See [blips.md](blips.md) for the full description of `type`, `sprite`, `color` and `display` values.

@@ -162,11 +162,55 @@ All values are read on the **game thread** — if the player entity is unavailab
 
 ---
 
+## Map Blips
+
+| Field | JSON type | Description |
+|-------|-----------|-------------|
+| `blips` | `array` | All active radar blips. See [blips.md](blips.md) for the full reference |
+
+The `blips` field returns an array of objects. Each object represents one active slot in `CRadar::ms_RadarTrace[175]`.
+
+```json
+[
+  {
+    "idx":         0,
+    "type":        4,
+    "sprite":      38,
+    "display":     3,
+    "color":       8,
+    "x":           2496.0,
+    "y":          -1667.6,
+    "z":           13.4,
+    "size":        2,
+    "short_range": false,
+    "friendly":    false
+  }
+]
+```
+
+| Sub-field | JSON type | Description |
+|-----------|-----------|-------------|
+| `idx` | `integer` | Slot index (0–174). Stable within a game session |
+| `type` | `integer` | `eBlipType`: what entity the blip is attached to (`4` = fixed coordinate, `2` = character, `1` = car, …) |
+| `sprite` | `integer` | `eRadarSprite`: icon identifier (`0` = coloured dot, `6` = Ammu-Nation, `38` = Sweet, …) |
+| `display` | `integer` | `eBlipDisplay`: `0`=hidden, `1`=marker only, `2`=blip only, `3`=both |
+| `color` | `integer` | `eBlipColour`: dot colour. Relevant when `sprite == 0` |
+| `x`, `y`, `z` | `float` | World position. Updated every frame for entity blips (`type` 1/2/3/7) |
+| `size` | `integer` | Relative dot size (`1` = smallest) |
+| `short_range` | `boolean` | `true` → only visible on mini-map when nearby; `false` → always shown |
+| `friendly` | `boolean` | Affects `BLIP_COLOUR_THREAT` colour selection |
+
+> For the complete enum tables (`eBlipType`, `eRadarSprite`, `eBlipColour`, `eBlipDisplay`) and client-side filtering examples, see [blips.md](blips.md).
+
+---
+
 ## Notes
 
 - All `float` values use standard IEEE 754 double precision as JSON numbers.
 - Composite fields (`position`, `game_time`) are compared as a unit for
   change detection in subscriptions — if any component changes, the whole
   object is pushed.
+- The `blips` array is compared as a whole for change detection — any added,
+  removed, or moved blip triggers a push.
 - New fields can be added by registering them in `FieldRegistry::init()`
   in `src/protocol/FieldRegistry.cpp`.
