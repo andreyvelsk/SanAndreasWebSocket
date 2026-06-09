@@ -14,7 +14,8 @@ All values are read on the **game thread** — if the player entity is unavailab
 | `position_x` | `float` | X coordinate |
 | `position_y` | `float` | Y coordinate |
 | `position_z` | `float` | Z coordinate |
-| `angle` | `float` | Heading in degrees, `0`–`360` (clockwise from north). Derived from `m_fHeadingCurrent` in radians. |
+| `angle` | `float` | Player heading in degrees, `0`–`360` (clockwise from north). Derived from `m_fHeadingCurrent` in radians. |
+| `camera_angle` | `float` | Camera heading in degrees, `0`–`360` (clockwise from north). Used for minimap rotation. Derived from `CRadar::m_fRadarOrientation` in radians. |
 
 > `position` is the recommended field for tracking player movement — it returns
 > all three axes in one value and is compared as a unit for change detection.

@@ -9,6 +9,7 @@
 #include "CPlayerInfo.h"
 #include "CClock.h"
 #include "CRadar.h"
+#include "CCamera.h"
 
 #include <functional>
 #include <unordered_map>
@@ -39,6 +40,18 @@ static nlohmann::json readAngle()
     CPlayerPed* p = localPed(); if (!p) return nullptr;
     constexpr float kRad2Deg = 180.0f / 3.14159265358979f;
     float deg = p->m_fHeadingCurrent * kRad2Deg;
+    // Normalise to [0, 360)
+    while (deg <   0.0f) deg += 360.0f;
+    while (deg >= 360.0f) deg -= 360.0f;
+    return deg;
+}
+
+// ── camera_angle (camera heading used for minimap rotation, degrees, 0–360) ──
+
+static nlohmann::json readCameraAngle()
+{
+    constexpr float kRad2Deg = 180.0f / 3.14159265358979f;
+    float deg = CRadar::m_fRadarOrientation * kRad2Deg;
     // Normalise to [0, 360)
     while (deg <   0.0f) deg += 360.0f;
     while (deg >= 360.0f) deg -= 360.0f;
@@ -157,6 +170,9 @@ namespace FieldRegistry {
 
         // angle
         g_fields["angle"] = readAngle;
+
+        // camera_angle
+        g_fields["camera_angle"] = readCameraAngle;
 
         // vitals
         g_fields["health"] = readHealth;
