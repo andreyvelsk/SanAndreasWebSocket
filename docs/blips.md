@@ -338,7 +338,8 @@ The `blips` field uses the standard `query` and `subscribe` methods (see [protoc
   "z":           13.4,
   "size":        2,
   "short_range": false,
-  "friendly":    false
+  "friendly":    false,
+  "remain":      true
 }
 ```
 
@@ -353,8 +354,21 @@ The `blips` field uses the standard `query` and `subscribe` methods (see [protoc
 | `size` | `integer` | `m_nBlipSize` | Relative dot size (1 = smallest) |
 | `short_range` | `boolean` | `m_bShortRange` | `true` — mini-map only (nearby); `false` — always shown |
 | `friendly` | `boolean` | `m_bFriendly` | Affects `BLIP_COLOUR_THREAT` colour selection |
+| `remain` | `boolean` | `m_bBlipRemain` | Актуален только для entity blips (`type` 1/2/3/7). `true` — blip останется в массиве даже после удаления персонажа/машины/объекта, за которым следил (позиция заморозится). `false` — blip будет автоматически очищен игрой при удалении entity. Для координатных blips (`type` 4/5/6/8) всегда `false`. |
 
-The `blips` field returns an **array** of objects. Only active slots (`m_bInUse == true && m_nBlipType != BLIP_NONE`) are included.
+### Server-side filtering
+
+The server filters blips to match what the game actually draws on the minimap. A blip is **excluded** from the result if any of these conditions are true:
+
+1. **Slot inactive** — `m_bInUse == false` or `m_nBlipType == BLIP_NONE`.
+2. **Explicitly hidden** — `m_nBlipDisplay == BLIP_DISPLAY_NEITHER` (0). The game does not draw these at all.
+3. **System sprite** — sprite is `RADAR_SPRITE_CENTRE` (2), `RADAR_SPRITE_MAP_HERE` (3), or `RADAR_SPRITE_NORTH` (4). These are rendered outside the main blip loop.
+4. **Entity gone, no persistence** — for entity blips (`type` 1/2/3/7): the referenced entity (vehicle/ped/object) no longer exists and `remain == false`. The game clears these blips during the draw pass.
+
+Blips that pass all filters are included. The client can use `display` to further filter:
+- `display == 1` (`BLIP_DISPLAY_MARKER_ONLY`): 3D marker in the world, no radar dot
+- `display == 2` (`BLIP_DISPLAY_BLIP_ONLY`): radar dot only, no 3D marker
+- `display == 3` (`BLIP_DISPLAY_BOTH`): both radar dot and 3D marker
 
 ---
 
@@ -370,9 +384,9 @@ The `blips` field returns an **array** of objects. Only active slots (`m_bInUse 
       "ts": 3600000,
       "fields": {
         "blips": [
-          {"idx":0,"type":4,"sprite":38,"display":3,"color":8,"x":2496.0,"y":-1667.6,"z":13.4,"size":2,"short_range":false,"friendly":false},
-          {"idx":1,"type":4,"sprite":6, "display":3,"color":8,"x":255.0, "y":-180.0, "z":1.5, "size":2,"short_range":false,"friendly":false},
-          {"idx":2,"type":2,"sprite":0, "display":2,"color":0,"x":1234.5,"y":-900.0, "z":15.0,"size":1,"short_range":true, "friendly":false}
+          {"idx":0,"type":4,"sprite":38,"display":3,"color":8,"x":2496.0,"y":-1667.6,"z":13.4,"size":2,"short_range":false,"friendly":false,"remain":false},
+          {"idx":1,"type":4,"sprite":6, "display":3,"color":8,"x":255.0, "y":-180.0, "z":1.5, "size":2,"short_range":false,"friendly":false,"remain":false},
+          {"idx":2,"type":2,"sprite":0, "display":2,"color":0,"x":1234.5,"y":-900.0, "z":15.0,"size":1,"short_range":true, "friendly":false,"remain":true}
         ]
       }
     },
@@ -408,9 +422,9 @@ const poi = blips.filter(b => b.type === 4 && b.sprite > 4 && !b.short_range);
 // Mission targets (coloured dots, always shown)
 const targets = blips.filter(b => b.type === 4 && b.sprite === 0 && !b.short_range);
 
-// Dynamic entity blips only
-const entities = blips.filter(b => [1, 2, 3, 7].includes(b.type));
+// Dynamic entity blips only (skipping ghosts with invalid entities)
+const entities = blips.filter(b => [1, 2, 3, 7].includes(b.type) && b.remain);
 
-// Visible blips only (exclude hidden ones)
-const visible = blips.filter(b => b.display !== 0);
+// Visible blips on minimap (exclude 3D-marker-only and hidden ones)
+const minimap = blips.filter(b => b.display === 2 || b.display === 3);
 ```

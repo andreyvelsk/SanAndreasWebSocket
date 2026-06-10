@@ -10,6 +10,7 @@
 #include "CClock.h"
 #include "CRadar.h"
 #include "CCamera.h"
+#include "CPools.h"
 
 #include <functional>
 #include <unordered_map>
@@ -129,15 +130,77 @@ static nlohmann::json readGameMinute() { return (int)CClock::ms_nGameClockMinute
 
 // ── map blips ─────────────────────────────────────────────────────────────────
 
+// System sprites that are drawn separately from the main blip array.
+// They should not appear in the blips data feed.
+static bool isSystemSprite(int sprite)
+{
+    return sprite == RADAR_SPRITE_CENTRE  ||  // 2 — map centre crosshair
+           sprite == RADAR_SPRITE_MAP_HERE ||  // 3 — "you are here" arrow
+           sprite == RADAR_SPRITE_NORTH;       // 4 — north indicator
+}
+
+// Returns true if the entity referenced by an entity blip still exists.
+// Entity blips (BLIP_CAR, BLIP_CHAR, BLIP_OBJECT, BLIP_PICKUP) depend on
+// live game objects; if the object is gone the blip becomes stale.
+static bool entityHandleValid(unsigned int handle, int type)
+{
+    switch (type) {
+    case BLIP_CAR:    return CPools::GetVehicle((int)handle) != nullptr;
+    case BLIP_CHAR:   return CPools::GetPed((int)handle) != nullptr;
+    case BLIP_OBJECT: return CPools::GetObject((int)handle) != nullptr;
+    // BLIP_PICKUP uses the pickup pool (CPickups), not the object pool.
+    // We skip validation for pickups since CPickups doesn't expose a
+    // public handle-lookup in the plugin-sdk. The game still draws
+    // stale pickup blips with m_bBlipRemain semantics.
+    default:          return true; // coordinate blips have no entity handle
+    }
+}
+
 static nlohmann::json readBlips()
 {
     nlohmann::json arr = nlohmann::json::array();
     if (!CRadar::ms_RadarTrace) return arr;
 
     const unsigned int count = MAX_RADAR_TRACES; // 175
+
+    // Cache player position for short-range distance checks
+    CPlayerPed* player = FindPlayerPed(-1);
+    CVector playerPos;
+    bool hasPlayerPos = (player != nullptr);
+    if (hasPlayerPos)
+        playerPos = player->GetPosition();
+
     for (unsigned int i = 0; i < count; ++i) {
         const tRadarTrace& t = CRadar::ms_RadarTrace[i];
-        if (!t.m_bInUse || t.m_nBlipType == BLIP_NONE) continue;
+
+        // ── basic slot validity (matches game's DrawBlips logic) ────────
+        if (!t.m_bInUse || t.m_nBlipType == BLIP_NONE)
+            continue;
+
+        // ── hidden blip (the game does not draw these at all) ───────────
+        if (t.m_nBlipDisplay == BLIP_DISPLAY_NEITHER)
+            continue;
+
+        // ── system sprites (drawn outside the main blip loop) ───────────
+        if (isSystemSprite(t.m_nRadarSprite))
+            continue;
+
+        // ── entity blips: skip if the entity is gone and blip won't remain ──
+        const bool isEntityBlip = (t.m_nBlipType == BLIP_CAR  ||
+                                   t.m_nBlipType == BLIP_CHAR ||
+                                   t.m_nBlipType == BLIP_OBJECT ||
+                                   t.m_nBlipType == BLIP_PICKUP);
+        if (isEntityBlip) {
+            if (!entityHandleValid(t.m_nEntityHandle, t.m_nBlipType)) {
+                // Entity is gone. If m_bBlipRemain is false, the game
+                // clears this blip — so we skip it here too.
+                if (!t.m_bBlipRemain)
+                    continue;
+                // If m_bBlipRemain is true the blip persists as a "ghost"
+                // marker even after the entity is deleted. We let it pass
+                // but the client can use the "remain" field to identify it.
+            }
+        }
 
         arr.push_back({
             {"idx",         (int)i},
@@ -150,7 +213,8 @@ static nlohmann::json readBlips()
             {"z",           t.m_vecPos.z},
             {"size",        (int)t.m_nBlipSize},
             {"short_range", (bool)t.m_bShortRange},
-            {"friendly",    (bool)t.m_bFriendly}
+            {"friendly",    (bool)t.m_bFriendly},
+            {"remain",      (bool)t.m_bBlipRemain}
         });
     }
     return arr;
