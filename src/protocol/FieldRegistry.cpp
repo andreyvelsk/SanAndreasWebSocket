@@ -11,6 +11,7 @@
 #include "CRadar.h"
 #include "CCamera.h"
 #include "CPools.h"
+#include "CPickups.h"
 
 #include <functional>
 #include <unordered_map>
@@ -139,23 +140,6 @@ static bool isSystemSprite(int sprite)
            sprite == RADAR_SPRITE_NORTH;       // 4 — north indicator
 }
 
-// Returns true if the entity referenced by an entity blip still exists.
-// Entity blips (BLIP_CAR, BLIP_CHAR, BLIP_OBJECT, BLIP_PICKUP) depend on
-// live game objects; if the object is gone the blip becomes stale.
-static bool entityHandleValid(unsigned int handle, int type)
-{
-    switch (type) {
-    case BLIP_CAR:    return CPools::GetVehicle((int)handle) != nullptr;
-    case BLIP_CHAR:   return CPools::GetPed((int)handle) != nullptr;
-    case BLIP_OBJECT: return CPools::GetObject((int)handle) != nullptr;
-    // BLIP_PICKUP uses the pickup pool (CPickups), not the object pool.
-    // We skip validation for pickups since CPickups doesn't expose a
-    // public handle-lookup in the plugin-sdk. The game still draws
-    // stale pickup blips with m_bBlipRemain semantics.
-    default:          return true; // coordinate blips have no entity handle
-    }
-}
-
 static nlohmann::json readBlips()
 {
     nlohmann::json arr = nlohmann::json::array();
@@ -163,44 +147,67 @@ static nlohmann::json readBlips()
 
     const unsigned int count = MAX_RADAR_TRACES; // 175
 
-    // Cache player position for short-range distance checks
-    CPlayerPed* player = FindPlayerPed(-1);
-    CVector playerPos;
-    bool hasPlayerPos = (player != nullptr);
-    if (hasPlayerPos)
-        playerPos = player->GetPosition();
-
     for (unsigned int i = 0; i < count; ++i) {
         const tRadarTrace& t = CRadar::ms_RadarTrace[i];
 
-        // ── basic slot validity (matches game's DrawBlips logic) ────────
+        // ── basic slot validity ────────
         if (!t.m_bInUse || t.m_nBlipType == BLIP_NONE)
-            continue;
-
-        // ── hidden blip (the game does not draw these at all) ───────────
-        if (t.m_nBlipDisplay == BLIP_DISPLAY_NEITHER)
             continue;
 
         // ── system sprites (drawn outside the main blip loop) ───────────
         if (isSystemSprite(t.m_nRadarSprite))
             continue;
 
-        // ── entity blips: skip if the entity is gone and blip won't remain ──
-        const bool isEntityBlip = (t.m_nBlipType == BLIP_CAR  ||
-                                   t.m_nBlipType == BLIP_CHAR ||
-                                   t.m_nBlipType == BLIP_OBJECT ||
-                                   t.m_nBlipType == BLIP_PICKUP);
-        if (isEntityBlip) {
-            if (!entityHandleValid(t.m_nEntityHandle, t.m_nBlipType)) {
-                // Entity is gone. If m_bBlipRemain is false, the game
-                // clears this blip — so we skip it here too.
-                if (!t.m_bBlipRemain)
-                    continue;
-                // If m_bBlipRemain is true the blip persists as a "ghost"
-                // marker even after the entity is deleted. We let it pass
-                // but the client can use the "remain" field to identify it.
-            }
+        // ── resolve entity position ────
+        // The game's DrawEntityBlip reads the entity position directly
+        // from the live entity, not from tRadarTrace.m_vecPos. We
+        // replicate that logic: for entity blips, read GetPosition()
+        // from the actual entity; fall back to m_vecPos if the entity
+        // is gone but m_bBlipRemain keeps the blip alive.
+        CVector pos = t.m_vecPos;
+        bool entityGone = false;
+
+        switch (t.m_nBlipType) {
+        case BLIP_CAR: {
+            CVehicle* v = CPools::GetVehicle((int)t.m_nEntityHandle);
+            if (v) pos = v->GetPosition();
+            else entityGone = true;
+            break;
         }
+        case BLIP_CHAR: {
+            CPed* ped = CPools::GetPed((int)t.m_nEntityHandle);
+            if (ped) pos = ped->GetPosition();
+            else entityGone = true;
+            break;
+        }
+        case BLIP_OBJECT: {
+            CObject* obj = CPools::GetObject((int)t.m_nEntityHandle);
+            if (obj) pos = obj->GetPosition();
+            else entityGone = true;
+            break;
+        }
+        case BLIP_PICKUP: {
+            int idx = (int)t.m_nEntityHandle;
+            if (idx >= 0 && idx < MAX_NUM_PICKUPS && CPickups::aPickUps) {
+                CPickup& pickup = CPickups::aPickUps[idx];
+                if (pickup.m_nPickupType != PICKUP_NONE)
+                    pos = pickup.GetPosn();
+                else
+                    entityGone = true;
+            } else {
+                entityGone = true;
+            }
+            break;
+        }
+        }
+
+        // ── entity gone with no persistence: skip ──
+        if (entityGone && !t.m_bBlipRemain)
+            continue;
+
+        // ── hidden blip ────────────────
+        if (t.m_nBlipDisplay == BLIP_DISPLAY_NEITHER)
+            continue;
 
         arr.push_back({
             {"idx",         (int)i},
@@ -208,9 +215,9 @@ static nlohmann::json readBlips()
             {"sprite",      (int)t.m_nRadarSprite},
             {"display",     (int)t.m_nBlipDisplay},
             {"color",       (int)t.m_nColour},
-            {"x",           t.m_vecPos.x},
-            {"y",           t.m_vecPos.y},
-            {"z",           t.m_vecPos.z},
+            {"x",           pos.x},
+            {"y",           pos.y},
+            {"z",           pos.z},
             {"size",        (int)t.m_nBlipSize},
             {"short_range", (bool)t.m_bShortRange},
             {"friendly",    (bool)t.m_bFriendly},

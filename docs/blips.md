@@ -63,7 +63,7 @@ struct tRadarTrace {
 };
 ```
 
-> **Entity blip position:** for `BLIP_CAR`, `BLIP_CHAR`, `BLIP_OBJECT`, `BLIP_PICKUP`, the game updates `m_vecPos` every frame. Reading `m_vecPos` always returns the current position — no separate entity lookup is needed.
+> **Entity blip position:** for `BLIP_CAR`, `BLIP_CHAR`, `BLIP_OBJECT`, the game reads the position **directly from the live entity** via `GetPosition()` during `DrawEntityBlip`. `m_vecPos` in `tRadarTrace` is **not** updated by the game for entity-tracking blips — it is only used as a fallback when the entity is gone but `m_bBlipRemain` keeps the blip alive. For coordinate blips (`BLIP_COORD`, `BLIP_CONTACTPOINT`) and `BLIP_PICKUP`, `m_vecPos` is set by the script and used as-is.
 
 ---
 
@@ -173,7 +173,7 @@ enum eBlipType {
 
 | `m_nBlipType` | Nature | Position |
 |---------------|--------|---------|
-| 1, 2, 3, 7 | Dynamic (entity) | `m_vecPos` is updated by the game every frame |
+| 1, 2, 3, 7 | Dynamic (entity) | Resolved from the entity via `GetPosition()` each read; `m_vecPos` is a fallback when entity is gone but `m_bBlipRemain` is true |
 | 4, 5, 6, 8 | Static (coordinate) | `m_vecPos` is set by the script and does not change |
 
 ---
@@ -350,22 +350,24 @@ The `blips` field uses the standard `query` and `subscribe` methods (see [protoc
 | `sprite` | `integer` | `m_nRadarSprite` | Display icon (see [§5 eRadarSprite](#5-eradarsprite)). `0` = coloured dot |
 | `display` | `integer` | `m_nBlipDisplay` | Visibility mode (see [§7 eBlipDisplay](#7-eblipdisplay)) |
 | `color` | `integer` | `m_nColour` | Dot colour (see [§6 eBlipColour](#6-eblipcolour)). Relevant when `sprite == 0` |
-| `x`, `y`, `z` | `float` | `m_vecPos` | World position. Updated every frame for entity blips (`type` 1/2/3/7) |
+| `x`, `y`, `z` | `float` | Entity `GetPosition()` for `BLIP_CAR/CHAR/OBJECT/PICKUP`; `m_vecPos` for coordinate blips and as fallback when entity is gone | World position. For entity blips, resolved from the live entity every read — reflects real-time movement. For coordinate blips, static value set by the script |
 | `size` | `integer` | `m_nBlipSize` | Relative dot size (1 = smallest) |
 | `short_range` | `boolean` | `m_bShortRange` | `true` — mini-map only (nearby); `false` — always shown |
 | `friendly` | `boolean` | `m_bFriendly` | Affects `BLIP_COLOUR_THREAT` colour selection |
-| `remain` | `boolean` | `m_bBlipRemain` | Актуален только для entity blips (`type` 1/2/3/7). `true` — blip останется в массиве даже после удаления персонажа/машины/объекта, за которым следил (позиция заморозится). `false` — blip будет автоматически очищен игрой при удалении entity. Для координатных blips (`type` 4/5/6/8) всегда `false`. |
+| `remain` | `boolean` | `m_bBlipRemain` | Актуален только для entity blips (`type` 1/2/3/7). `true` — blip останется в массиве даже после удаления персонажа/машины/объекта, за которым следил (позиция заморозится на последнем известном `m_vecPos`). `false` — blip будет автоматически очищен игрой при удалении entity. Для координатных blips (`type` 4/5/6/8) всегда `false`. |
 
-### Server-side filtering
+### Server-side processing
 
-The server filters blips to match what the game actually draws on the minimap. A blip is **excluded** from the result if any of these conditions are true:
+The server reads `CRadar::ms_RadarTrace` directly and applies minimal filtering to match what the game actually draws on the minimap. Processing steps, in order:
 
-1. **Slot inactive** — `m_bInUse == false` or `m_nBlipType == BLIP_NONE`.
-2. **Explicitly hidden** — `m_nBlipDisplay == BLIP_DISPLAY_NEITHER` (0). The game does not draw these at all.
-3. **System sprite** — sprite is `RADAR_SPRITE_CENTRE` (2), `RADAR_SPRITE_MAP_HERE` (3), or `RADAR_SPRITE_NORTH` (4). These are rendered outside the main blip loop.
-4. **Entity gone, no persistence** — for entity blips (`type` 1/2/3/7): the referenced entity (vehicle/ped/object) no longer exists and `remain == false`. The game clears these blips during the draw pass.
+1. **Slot inactive** — `m_bInUse == false` or `m_nBlipType == BLIP_NONE` → excluded.
+2. **System sprite** — sprite is `RADAR_SPRITE_CENTRE` (2), `RADAR_SPRITE_MAP_HERE` (3), or `RADAR_SPRITE_NORTH` (4) → excluded. These are rendered outside the main blip loop by the game.
+3. **Entity position resolution** — for `BLIP_CAR`, `BLIP_CHAR`, `BLIP_OBJECT`, `BLIP_PICKUP`, the server reads the position from the live entity via `GetPosition()` (matching the game's `DrawEntityBlip` behaviour). If the entity no longer exists:
+   - `m_bBlipRemain == true` → blip is included with the last known position from `m_vecPos`
+   - `m_bBlipRemain == false` → excluded (the game clears these blips during the draw pass)
+4. **Explicitly hidden** — `m_nBlipDisplay == BLIP_DISPLAY_NEITHER` (0) → excluded. The game does not draw these at all.
 
-Blips that pass all filters are included. The client can use `display` to further filter:
+Blips that pass all checks are included. The client can use `display` to further filter:
 - `display == 1` (`BLIP_DISPLAY_MARKER_ONLY`): 3D marker in the world, no radar dot
 - `display == 2` (`BLIP_DISPLAY_BLIP_ONLY`): radar dot only, no 3D marker
 - `display == 3` (`BLIP_DISPLAY_BOTH`): both radar dot and 3D marker

@@ -196,7 +196,7 @@ The `blips` field returns an array of objects. Each object represents one active
 | `sprite` | `integer` | `eRadarSprite`: icon identifier (`0` = coloured dot, `6` = Ammu-Nation, `38` = Sweet, …) |
 | `display` | `integer` | `eBlipDisplay`: `0`=hidden, `1`=marker only, `2`=blip only, `3`=both |
 | `color` | `integer` | `eBlipColour`: dot colour. Relevant when `sprite == 0` |
-| `x`, `y`, `z` | `float` | World position. Updated every frame for entity blips (`type` 1/2/3/7) |
+| `x`, `y`, `z` | `float` | World position. For entity blips (`type` 1/2/3/7), resolved from the live entity via `GetPosition()` every read — reflects real-time movement. For coordinate blips, static value set by the script |
 | `size` | `integer` | Relative dot size (`1` = smallest) |
 | `short_range` | `boolean` | `true` → only visible on mini-map when nearby; `false` → always shown |
 | `friendly` | `boolean` | Affects `BLIP_COLOUR_THREAT` colour selection |
