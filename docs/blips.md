@@ -36,6 +36,14 @@ Each slot is either free (`m_bInUse == false`) or holds an active blip. The game
 **Entity blips** (`BLIP_CAR`, `BLIP_CHAR`, `BLIP_OBJECT`, `BLIP_PICKUP`) are "dynamic": their position follows a live game entity.  
 **Coordinate blips** (`BLIP_COORD`, `BLIP_CONTACTPOINT`) are "static": the position is set by the script and does not change.
 
+### Visibility in interiors
+
+The game uses `CRadar::DisplayThisBlip(sprite, priority)` to decide whether a blip is rendered in the current context. When the player is **inside a building** (`CGame::CanSeeOutSideFromCurrArea() == false`), this function allows only a handful of sprites through: `RADAR_SPRITE_NONE`, `RADAR_SPRITE_WHITE`, `RADAR_SPRITE_MAFIACASINO`, `RADAR_SPRITE_SCHOOL`, `RADAR_SPRITE_WAYPOINT`, `RADAR_SPRITE_TRIADSCASINO`, `RADAR_SPRITE_CASH`. All other sprites — including all POI and contact icons — are suppressed.
+
+In the **open world** all sprites pass (each sprite category is covered by one of the three draw priorities that `DrawBlips` iterates).
+
+Additionally, `BLIP_CONTACTPOINT` blips (entrance spheres, objective areas) are suppressed by `CRadar::DrawCoordBlip` whenever `CTheScripts::IsPlayerOnAMission()` is true.
+
 ---
 
 ## 2. tRadarTrace struct
@@ -385,15 +393,19 @@ The `blips` field uses the standard `query` and `subscribe` methods (see [protoc
 
 ### Server-side processing
 
-The server reads `CRadar::ms_RadarTrace` directly and applies minimal filtering to match what the game actually draws on the minimap. Processing steps, in order:
+The server reads `CRadar::ms_RadarTrace` directly and applies the same filtering as `CRadar::DrawBlips()` to ensure the list matches exactly what the game draws on the minimap. Processing steps, in order:
 
 1. **Slot inactive** — `m_bInUse == false` or `m_nBlipType == BLIP_NONE` → excluded.
 2. **System sprite** — sprite is `RADAR_SPRITE_CENTRE` (2), `RADAR_SPRITE_MAP_HERE` (3), or `RADAR_SPRITE_NORTH` (4) → excluded. These are rendered outside the main blip loop by the game.
-3. **Entity position resolution** — for `BLIP_CAR`, `BLIP_CHAR`, `BLIP_OBJECT`, `BLIP_PICKUP`, the server reads the position from the live entity via `GetPosition()` (matching the game's `DrawEntityBlip` behaviour). If the entity no longer exists:
+3. **`CRadar::DisplayThisBlip` check** — the server calls `CRadar::DisplayThisBlip(sprite, priority)` for `priority = 1, 2, 3` (replicating the priority loop in `DrawBlips`). A blip passes if the function returns `true` for at least one priority. The key area-dependent behaviour:
+   - **Open world** (`CGame::CanSeeOutSideFromCurrArea() == true` and `area_code == 0`): every non-system sprite passes (POI sprites at priority 1, contacts/mission sprites at priority 3, others at priority 2). No blips are suppressed in the open world.
+   - **Interior** (`CGame::CanSeeOutSideFromCurrArea() == false`): only a small fixed set of sprites is allowed — `RADAR_SPRITE_NONE`, `RADAR_SPRITE_WHITE`, `RADAR_SPRITE_MAFIACASINO`, `RADAR_SPRITE_SCHOOL`, `RADAR_SPRITE_WAYPOINT`, `RADAR_SPRITE_TRIADSCASINO`, `RADAR_SPRITE_CASH`. All other sprites (including POI and contact blips) are excluded. This matches what the minimap shows when the player is inside a building.
+4. **Contact-point blips during missions** — if `m_nBlipType == BLIP_CONTACTPOINT` (5) **and** `CTheScripts::IsPlayerOnAMission() == true` → excluded. This matches the guard in `CRadar::DrawCoordBlip` that suppresses entrance spheres and objective areas while a mission is active.
+5. **Entity position resolution** — for `BLIP_CAR`, `BLIP_CHAR`, `BLIP_OBJECT`, `BLIP_PICKUP`, the server reads the position from the live entity via `GetPosition()` (matching the game's `DrawEntityBlip` behaviour). If the entity no longer exists:
    - `m_bBlipRemain == true` → blip is included with the last known position from `m_vecPos`
    - `m_bBlipRemain == false` → excluded (the game clears these blips during the draw pass)
-4. **Explicitly hidden** — `m_nBlipDisplay == BLIP_DISPLAY_NEITHER` (0) → excluded. The game does not draw these at all.
-5. **Interior entrance resolution** — if `m_pEntryExit != nullptr`, the blip is an interior marker. The server computes the entrance door position (centre of `m_recEntrance` rect + `m_fEntranceZ`) and uses it for `x,y,z`. The original interior room coordinates are preserved in `interior_x/y/z`, and `is_interior` is set to `true`. This matches the game's `DrawCoordBlip` behaviour.
+6. **Explicitly hidden** — `m_nBlipDisplay == BLIP_DISPLAY_NEITHER` (0) → excluded. The game does not draw these at all.
+7. **Interior entrance resolution** — if `m_pEntryExit != nullptr`, the blip is an interior marker. The server computes the entrance door position (centre of `m_recEntrance` rect + `m_fEntranceZ`) and uses it for `x,y,z`. The original interior room coordinates are preserved in `interior_x/y/z`, and `is_interior` is set to `true`. This matches the game's `DrawCoordBlip` behaviour.
 
 Blips that pass all checks are included. The client can use `display` to further filter:
 - `display == 1` (`BLIP_DISPLAY_MARKER_ONLY`): 3D marker in the world, no radar dot

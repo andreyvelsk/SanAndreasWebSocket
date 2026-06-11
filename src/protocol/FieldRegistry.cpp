@@ -13,6 +13,7 @@
 #include "CPools.h"
 #include "CPickups.h"
 #include "CEntryExit.h"
+#include "CTheScripts.h"
 
 #include <functional>
 #include <unordered_map>
@@ -158,6 +159,30 @@ static nlohmann::json readBlips()
 
         // ── system sprites (drawn outside the main blip loop) ───────────
         if (isSystemSprite(t.m_nRadarSprite))
+            continue;
+
+        // ── game visibility check (replicates CRadar::DrawBlips logic) ────────
+        // DrawBlips iterates priority 1→3; a blip is rendered only if
+        // DisplayThisBlip returns true for at least one of these priorities.
+        // In interiors this hides most POI / contact sprites; on the open map
+        // all three priorities are covered so every non-system blip passes.
+        {
+            bool wouldDisplay = false;
+            for (char prio = 1; prio <= 3; ++prio) {
+                if (CRadar::DisplayThisBlip((int)t.m_nRadarSprite, prio)) {
+                    wouldDisplay = true;
+                    break;
+                }
+            }
+            if (!wouldDisplay)
+                continue;
+        }
+
+        // ── contact-point blips are suppressed during missions ────────────────
+        // DrawCoordBlip explicitly returns early when the player is on a mission
+        // and the blip type is BLIP_CONTACTPOINT (entrance spheres, objective
+        // areas, etc.). We replicate that guard here.
+        if (t.m_nBlipType == BLIP_CONTACTPOINT && CTheScripts::IsPlayerOnAMission())
             continue;
 
         // ── resolve entity position ────
