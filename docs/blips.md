@@ -339,7 +339,30 @@ The `blips` field uses the standard `query` and `subscribe` methods (see [protoc
   "size":        2,
   "short_range": false,
   "friendly":    false,
-  "remain":      true
+  "remain":      true,
+  "is_interior": false
+}
+```
+
+**Interior blip** (save house, barbershop, restaurant, etc.) — `x,y,z` shows the **entrance door** position:
+```json
+{
+  "idx":         12,
+  "type":        4,
+  "sprite":      35,
+  "display":     3,
+  "color":       8,
+  "x":           2500.0,
+  "y":          -1650.0,
+  "z":           12.5,
+  "size":        2,
+  "short_range": false,
+  "friendly":    false,
+  "remain":      false,
+  "is_interior": true,
+  "interior_x":  3000.0,
+  "interior_y": -2500.0,
+  "interior_z":  950.0
 }
 ```
 
@@ -355,6 +378,10 @@ The `blips` field uses the standard `query` and `subscribe` methods (see [protoc
 | `short_range` | `boolean` | `m_bShortRange` | `true` — mini-map only (nearby); `false` — always shown |
 | `friendly` | `boolean` | `m_bFriendly` | Affects `BLIP_COLOUR_THREAT` colour selection |
 | `remain` | `boolean` | `m_bBlipRemain` | Актуален только для entity blips (`type` 1/2/3/7). `true` — blip останется в массиве даже после удаления персонажа/машины/объекта, за которым следил (позиция заморозится на последнем известном `m_vecPos`). `false` — blip будет автоматически очищен игрой при удалении entity. Для координатных blips (`type` 4/5/6/8) всегда `false`. |
+| `is_interior` | `boolean` | `m_pEntryExit != nullptr` | `true` — blip связан с интерьером (дом сохранения, парикмахерская, ресторан и т.п.). `x,y,z` содержат позицию **входной двери** (центр `m_recEntrance` + `m_fEntranceZ`), соответствующую отображению на мини-карте. |
+| `interior_x` | `float` | Исходный `m_vecPos` | **Только когда `is_interior == true`.** Исходная позиция blip в мире (координаты комнаты интерьера, находящиеся далеко за пределами основной карты). |
+| `interior_y` | `float` | Исходный `m_vecPos` | См. `interior_x`. |
+| `interior_z` | `float` | Исходный `m_vecPos` | См. `interior_x`. |
 
 ### Server-side processing
 
@@ -366,6 +393,7 @@ The server reads `CRadar::ms_RadarTrace` directly and applies minimal filtering 
    - `m_bBlipRemain == true` → blip is included with the last known position from `m_vecPos`
    - `m_bBlipRemain == false` → excluded (the game clears these blips during the draw pass)
 4. **Explicitly hidden** — `m_nBlipDisplay == BLIP_DISPLAY_NEITHER` (0) → excluded. The game does not draw these at all.
+5. **Interior entrance resolution** — if `m_pEntryExit != nullptr`, the blip is an interior marker. The server computes the entrance door position (centre of `m_recEntrance` rect + `m_fEntranceZ`) and uses it for `x,y,z`. The original interior room coordinates are preserved in `interior_x/y/z`, and `is_interior` is set to `true`. This matches the game's `DrawCoordBlip` behaviour.
 
 Blips that pass all checks are included. The client can use `display` to further filter:
 - `display == 1` (`BLIP_DISPLAY_MARKER_ONLY`): 3D marker in the world, no radar dot

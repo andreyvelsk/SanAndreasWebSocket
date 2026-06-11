@@ -12,6 +12,7 @@
 #include "CCamera.h"
 #include "CPools.h"
 #include "CPickups.h"
+#include "CEntryExit.h"
 
 #include <functional>
 #include <unordered_map>
@@ -209,7 +210,25 @@ static nlohmann::json readBlips()
         if (t.m_nBlipDisplay == BLIP_DISPLAY_NEITHER)
             continue;
 
-        arr.push_back({
+        // ── interior blip: resolve entrance position ──
+        // Blips with m_pEntryExit represent interior locations (save houses,
+        // barbershops, restaurants, etc.). Their m_vecPos is the interior
+        // room position (far outside the normal world map). The game draws
+        // these blips at the entrance door position, so we compute it here:
+        //   entrance_xy = center of m_recEntrance rect
+        //   entrance_z  = m_fEntranceZ
+        bool isInterior = false;
+        CVector interiorPos; // original m_vecPos for interiors
+        if (t.m_pEntryExit) {
+            isInterior = true;
+            interiorPos = pos; // save original (interior) position
+            const CRect& r = t.m_pEntryExit->m_recEntrance;
+            pos.x = (r.left + r.right) * 0.5f;
+            pos.y = (r.top + r.bottom) * 0.5f;
+            pos.z = t.m_pEntryExit->m_fEntranceZ;
+        }
+
+        nlohmann::json entry{
             {"idx",         (int)i},
             {"type",        (int)t.m_nBlipType},
             {"sprite",      (int)t.m_nRadarSprite},
@@ -221,8 +240,17 @@ static nlohmann::json readBlips()
             {"size",        (int)t.m_nBlipSize},
             {"short_range", (bool)t.m_bShortRange},
             {"friendly",    (bool)t.m_bFriendly},
-            {"remain",      (bool)t.m_bBlipRemain}
-        });
+            {"remain",      (bool)t.m_bBlipRemain},
+            {"is_interior", isInterior}
+        };
+
+        if (isInterior) {
+            entry["interior_x"] = interiorPos.x;
+            entry["interior_y"] = interiorPos.y;
+            entry["interior_z"] = interiorPos.z;
+        }
+
+        arr.push_back(std::move(entry));
     }
     return arr;
 }
