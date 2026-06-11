@@ -96,6 +96,7 @@ static nlohmann::json readPedState()  { CPlayerPed* p = localPed(); return p ? n
 static nlohmann::json readMoveState() { CPlayerPed* p = localPed(); return p ? nlohmann::json(static_cast<int>(p->m_nMoveState)) : nullptr; }
 static nlohmann::json readInVehicle() { CPlayerPed* p = localPed(); return p ? nlohmann::json((bool)p->bInVehicle)               : nullptr; }
 static nlohmann::json readAreaCode()  { CPlayerPed* p = localPed(); return p ? nlohmann::json((int)p->m_nAreaCode)               : nullptr; }
+static nlohmann::json readIsInterior(){ CPlayerPed* p = localPed(); return p ? nlohmann::json((bool)(p->m_nAreaCode != 0))       : nullptr; }
 
 // ── weapon ────────────────────────────────────────────────────────────────────
 
@@ -286,7 +287,8 @@ namespace FieldRegistry {
         g_fields["ped_state"]  = readPedState;
         g_fields["move_state"] = readMoveState;
         g_fields["in_vehicle"] = readInVehicle;
-        g_fields["area_code"]  = readAreaCode;
+        g_fields["area_code"]   = readAreaCode;
+        g_fields["is_interior"] = readIsInterior;
 
         // weapon
         g_fields["current_weapon"] = readCurrentWeapon;

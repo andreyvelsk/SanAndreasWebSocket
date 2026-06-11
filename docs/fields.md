@@ -21,8 +21,8 @@ All values are read on the **game thread** — if the player entity is unavailab
 > all three axes in one value and is compared as a unit for change detection.
 
 > In interiors `position` returns **world-space coordinates** (interior cells are placed
-> at fixed locations outside the main map area). Use `area_code` to determine whether
-> the player is in the open world (`0`) or in an interior.
+> at fixed locations outside the main map area). Use `is_interior` (boolean convenience)
+> or `area_code` (numeric) to determine whether the player is in the open world or in an interior.
 
 ---
 
@@ -53,6 +53,7 @@ All values are read on the **game thread** — if the player entity is unavailab
 | `move_state` | `integer` | Raw `eMoveState` enum value (see table below) |
 | `in_vehicle` | `boolean` | `true` if player is seated in a vehicle |
 | `area_code` | `integer` | Interior/area code: `0` = open world |
+| `is_interior` | `boolean` | `true` when the player is inside an interior (any non-zero `area_code`); `false` on the global map |
 
 ### ePedState values (ped_state)
 
